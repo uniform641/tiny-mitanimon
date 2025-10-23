@@ -11,9 +11,8 @@ from typing import Optional
 from overpass_helper import OverpassHelper
 from model import *
 from utils import *
-from utils_overpass import *
 
-class Parser:
+class OsmAdminBoundaryParser:
     def __init__(self, overpass_endpoint: str = "https://overpass-api.de/api/interpreter"):
         self.boundaries: dict[int, Boundary] = dict()
         self.root_boundary: int = None
@@ -35,6 +34,19 @@ class Parser:
     def parse_relation(self, file_path: str, root_boundary_id: Optional[int] = None, max_admin_level: int = 7, name_preference: Optional[str] = None):
         self.max_admin_level = max_admin_level
 
+        self.fetch_relation_from_osm(file_path, name_preference)
+
+        # 为每个 boundary 寻找父节点与根节点
+        self.build_DAG()
+
+        # 清除超过行政区划等级的行政边界，注意这里可能会有 admin_level = None 的行政边界，这些边界在目前的逻辑中被删除
+        self.filter_by_admin_level(max_admin_level)
+        
+        self.filter_by_root_boundary(root_boundary_id)
+
+        self.fix_missing_relation(name_preference, max_admin_level)
+
+    def fetch_relation_from_osm(self, file_path: str, name_preference: Optional[str] = None):
         for obj in osmium.FileProcessor(file_path)\
             .with_filter(osmium.filter.EntityFilter(osmium.osm.RELATION))\
             .with_filter(osmium.filter.TagFilter(('type','boundary'))):
@@ -61,7 +73,8 @@ class Parser:
                                 if member.type == 'w':
                                     inner_boundary_id_list.append(member.ref)
                     
-                    boundary = Boundary(osm_id, name, name_en, name_zh, name_preference, admin_level, subarea_id_list, outer_boundary_id_list, inner_boundary_id_list)
+                    boundary = Boundary(osm_id, name, name_en, name_zh, name_preference, admin_level,
+                                         subarea_id_list, outer_boundary_id_list, inner_boundary_id_list)
                     if osm_id not in self.boundaries:
                         self.boundaries[osm_id] = boundary
                     else:
@@ -69,15 +82,6 @@ class Parser:
                 else:
                     self.non_admin_boundary.add(obj.id)
 
-        # 为每个 boundary 寻找父节点与根节点
-        self.build_DAG()
-
-        # 清除超过行政区划等级的行政边界，注意这里可能会有 admin_level = None 的行政边界，这些边界在目前的逻辑中被删除
-        self.filter_by_admin_level(max_admin_level)
-        
-        self.filter_by_root_boundary(root_boundary_id)
-
-        self.fix_missing_relation()
     
     def parse_way(self, file_path: str) -> None:
         for boundary in self.boundaries.values():
@@ -164,13 +168,39 @@ class Parser:
             print(f"build_DAG success. finsh: {count_finish}")
 
     # 修补因裁切等原因不在文件中的子区域
-    def fix_missing_relation(self) -> bool:
+    def fix_missing_relation(self, name_preference: str, max_admin_level: int) -> bool:
+        # 找到需要补充的 boundary
+        # key = boundary_id_to_be_fixed, value = super_area_id
+        relation_to_be_fixed_with_parent: dict[int, list[int]] = dict()
+        relation_to_be_fixed_with_root: dict[int, int] = dict()
+        relation_to_be_fixed: list[int] = list()
         success: bool = True
         for boundary in self.boundaries.values():
             for subarea in boundary.subarea_id_list:
                 if subarea not in self.boundaries and subarea not in self.non_admin_boundary and subarea not in self.small_admin_level_boundaries:
-                    print(f"subarea {subarea} of {boundary.name}({boundary.osm_id}) is missing")
-                    success = False
+                    relation_to_be_fixed_with_parent.setdefault(subarea, list()).append(boundary.osm_id)
+                    relation_to_be_fixed_with_root[subarea] = boundary.root_boundary_id
+                    relation_to_be_fixed.append(subarea)
+        
+        relation_tree = self.overpass_helper.build_relation_tree_from_root_relation(name_preference, max_admin_level, relation_to_be_fixed)
+        # 填充根节点的 super_area_id_list
+        for relation_id in relation_to_be_fixed_with_parent:
+            if relation_id in relation_tree:
+                relation_tree[relation_id].super_area_id_list = relation_to_be_fixed_with_parent[relation_id]
+        # 根据缺失处的 root_boundary 做 propagation,其实应该复用 build_DAG() 的能力
+        root_boundary_list = list(relation_to_be_fixed)
+        while root_boundary_list:
+            boundary_id = root_boundary_list.pop(0)
+            if boundary_id in relation_tree:
+                relation_tree[boundary_id].root_boundary_id = self.boundaries[relation_tree[boundary_id].super_area_id_list[0]].root_boundary_id
+                root_boundary_list += relation_tree[boundary_id].subarea_id_list
+
+        if len(relation_tree) != len(relation_to_be_fixed):
+            success = False
+            print(f"fix_missing_relation fail. expect fix {len(relation_to_be_fixed)} relation, fix {len(relation_tree)} relation")
+            for osm_id in relation_to_be_fixed:
+                if osm_id not in relation_tree:
+                    print(f"subarea {osm_id} of {self.boundaries[relation_to_be_fixed_with_parent[0]].name}({self.boundaries[relation_to_be_fixed_with_parent[0]].osm_id}) is missing")
         return success
 
     def check_way_integrity(self) -> bool:
@@ -359,9 +389,9 @@ class Parser:
         
 
 if __name__ == "__main__":
-    parser1 = Parser()
+    parser1 = OsmAdminBoundaryParser()
     parser1.parse("data/china-latest.osm.pbf", root_boundary_id=270056)
-    parser2 = Parser()
+    parser2 = OsmAdminBoundaryParser()
     parser2.parse("data/taiwan-latest.osm.pbf", root_boundary_id=449220)
     parser1.print_status()
     parser2.print_status()
