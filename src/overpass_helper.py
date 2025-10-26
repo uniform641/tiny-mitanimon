@@ -63,7 +63,9 @@ class OverpassHelper():
         print(f"total relation fetched from overpass api: {len(relation_tree)}")
         return relation_tree
     
-    def overpass_way_to_way_dict(overpass_result: dict[str, any]) -> dict[int, Way]:
+    def build_way_dict(self, way_ids: list[int]) -> dict[int, Way]:
+        # TODO: paging & size limit
+        overpass_result = self.get_ways(way_ids)
         try:
             ways = overpass_result["elements"]
             result: dict[int, Way] = dict()

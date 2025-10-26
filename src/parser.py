@@ -98,7 +98,7 @@ class OsmAdminBoundaryParser:
                     geom = shape(obj.__geo_interface__['geometry']).simplify(0.0001)
                     self.ways[obj.id] = Way(obj.id, geom, obj.is_closed())
 
-        self.check_way_integrity()
+        self.fix_missing_way()
 
         count_fail = 0
         for boundary in self.boundaries.values():
@@ -183,6 +183,7 @@ class OsmAdminBoundaryParser:
                     relation_to_be_fixed.append(subarea)
         
         relation_tree = self.overpass_helper.build_relation_tree_from_root_relation(name_preference, max_admin_level, relation_to_be_fixed)
+        self.boundaries.update(relation_tree)
         # 填充根节点的 super_area_id_list
         for relation_id in relation_to_be_fixed_with_parent:
             if relation_id in relation_tree:
@@ -195,19 +196,29 @@ class OsmAdminBoundaryParser:
                 relation_tree[boundary_id].root_boundary_id = self.boundaries[relation_tree[boundary_id].super_area_id_list[0]].root_boundary_id
                 root_boundary_list += relation_tree[boundary_id].subarea_id_list
 
-        if len(relation_tree) != len(relation_to_be_fixed):
-            success = False
-            print(f"fix_missing_relation fail. expect fix {len(relation_to_be_fixed)} relation, fix {len(relation_tree)} relation")
-            for osm_id in relation_to_be_fixed:
-                if osm_id not in relation_tree:
-                    print(f"subarea {osm_id} of {self.boundaries[relation_to_be_fixed_with_parent[0]].name}({self.boundaries[relation_to_be_fixed_with_parent[0]].osm_id}) is missing")
+        for osm_id in relation_to_be_fixed:
+            if osm_id not in relation_tree:
+                print(f"subarea {osm_id} of {self.boundaries[relation_to_be_fixed_with_parent[0]].name}({self.boundaries[relation_to_be_fixed_with_parent[0]].osm_id}) is missing")
+                success = False
+        if success:
+            print(f"fix missing relation success. fix {len(relation_tree)} relations.")
+        else:
+            print(f"fix missing relation fail. fix {len(relation_tree)} relations.")
         return success
 
-    def check_way_integrity(self) -> bool:
+    def fix_missing_way(self) -> bool:
         if len(self.way_need) == len(self.ways):
+            print(f"way count expect: {len(self.way_need)}, way count actual: {len(self.ways)}. Nothing need fixing.")
             return True
-        print(f"way count expect: {len(self.way_need)}, way count actual: {len(self.ways)}")
-        return False
+        print(f"way count expect: {len(self.way_need)}, way count actual: {len(self.ways)}. Begin to fix.")
+        way_missing: set[int] = self.way_need - set(self.ways.keys())
+        way_fixed: dict[int, Way] = self.overpass_helper.build_way_dict(list(way_missing))
+        self.ways.update(way_fixed)
+
+        print(f"way missing: {len(way_missing)}, way fixed: {len(way_fixed)}")
+        if len(way_missing) != len(way_fixed):
+            return False
+        return True
 
     # @parent_boundary_id: None 表示无视与父节点关系删除节点，若填写具体的值则只切断与该节点之间的联系，如果仍与其他节点有连接，则并不删除
     def remove_boundary(self, osm_id: int, parent_boundary_id: Optional[int] = None):
