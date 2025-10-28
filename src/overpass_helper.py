@@ -6,43 +6,64 @@ from utils import *
 
 
 class OverpassHelper():
-    def __init__(self, endpoint: str = "https://overpass-api.de/api/interpreter", timeout: int = 10):
+    def __init__(self, endpoint: str = "https://overpass-api.de/api/interpreter", timeout: int = 30, max_retry: int = 3):
         self.api = overpass.API(endpoint = endpoint, timeout = timeout)
+        self.max_retry = max_retry
     
     def get_ways(self, way_ids: list[int]):
         if len(way_ids) == 0:
-            return
+            return dict()
         way_ids_str = ",".join([str(way_id) for way_id in way_ids])
-        return self.api.get(f'way(id:{way_ids_str});', responseformat='json', verbosity='geom')
+        for _ in range(self.max_retry):
+            try:
+                result = self.api.get(f'way(id:{way_ids_str});', responseformat='json', verbosity='geom')
+                if result and result['elements']:
+                    return result
+            except:
+                pass
+        print(f"overpass get ways fail with retry={self.max_retry}")
+        raise Exception('OverpassRequestError')
     
     def get_relations(self, relation_ids: list[int]):
         if len(relation_ids) == 0:
-            return
+            return dict()
         relation_ids_str = ",".join([str(relation_id) for relation_id in relation_ids])
-        return self.api.get(f'relation(id:{relation_ids_str});', responseformat='json', verbosity='geom')
-    
+        for _ in range(self.max_retry):
+            try:
+                result = self.api.get(f'relation(id:{relation_ids_str});', responseformat='json', verbosity='body')
+                if result and result['elements']:
+                    return result
+            except:
+                pass
+        print(f"overpass get relations fail with retry={self.max_retry}")
+        raise Exception('OverpassRequestError')
+
     def build_relation_tree_from_root_relation(self, name_preference: str, max_admin_level: int,
                                                root_relation_list: list[int]) -> dict[int, Boundary]:
+        print(f"relation to be fixed: {root_relation_list}")
         relation_tree: dict[int, Boundary] = dict()
         relation_to_parent: dict[int, list[int]] = dict()
         relation_to_query: list[int] = list(root_relation_list)
         # 防止出现环导致无限循环
         epoch: int = 0
 
-        while epoch < 10 and not relation_to_query:
+        while epoch < 10 and relation_to_query:
             epoch += 1
             try:
                 overpass_result: dict[str, Any] = self.get_relations(relation_to_query)
                 relation_to_query.clear()
+                if not overpass_result or not overpass_result['elements']:
+                    continue 
                 relations = overpass_result["elements"]
                 for relation in relations:
                     if relation["type"] == "relation":
                         osm_id = relation["id"]
-                        name = relation.get("name")
-                        name_en = relation.get("name:en")
-                        name_zh = relation.get("name:zh")
-                        name_prefer = relation.get(name_preference)
-                        admin_level = safe_cast(relation.get('admin_level'), int)
+                        tags = relation["tags"]
+                        name = tags.get("name")
+                        name_en = tags.get("name:en")
+                        name_zh = tags.get("name:zh")
+                        name_prefer = tags.get(name_preference)
+                        admin_level = safe_cast(tags.get('admin_level'), int)
                         subarea_id_list = [member["ref"] for member in relation["members"] if member["type"]=="relation" and member["role"]=="subarea"]
                         outer_boundary_id_list = [member["ref"] for member in relation["members"] if member["type"]=="way" and member["role"]=="outer"]
                         inner_boundary_id_list = [member["ref"] for member in relation["members"] if member["type"]=="way" and member["role"]=="inner"]

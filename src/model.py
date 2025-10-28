@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import NamedTuple
+from shapely import MultiPolygon
 
 @dataclass
 class Boundary:
@@ -15,7 +16,7 @@ class Boundary:
     root_boundary_candidate_id_list: list[int]
     outer_boundary_id_list: list[int]
     inner_boundary_id_list: list[int]
-    boundary: any
+    geom: type[MultiPolygon]
 
     def __init__(self, osm_id, name, name_en, name_zh, name_preference, admin_level, subarea_id_list, outer_boundary_id_list, inner_boundary_id_list):
         self.osm_id = osm_id

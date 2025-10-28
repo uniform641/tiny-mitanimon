@@ -8,6 +8,7 @@ from shapely import wkb
 from datetime import datetime
 from collections import Counter
 from typing import Optional
+from pathlib import Path
 from overpass_helper import OverpassHelper
 from model import *
 from utils import *
@@ -198,7 +199,7 @@ class OsmAdminBoundaryParser:
 
         for osm_id in relation_to_be_fixed:
             if osm_id not in relation_tree:
-                print(f"subarea {osm_id} of {self.boundaries[relation_to_be_fixed_with_parent[0]].name}({self.boundaries[relation_to_be_fixed_with_parent[0]].osm_id}) is missing")
+                print(f"subarea {osm_id} of {self.boundaries[relation_to_be_fixed_with_parent[osm_id][0]].name}({self.boundaries[relation_to_be_fixed_with_parent[osm_id][0]].osm_id}) is missing")
                 success = False
         if success:
             print(f"fix missing relation success. fix {len(relation_tree)} relations.")
@@ -243,6 +244,7 @@ class OsmAdminBoundaryParser:
                 del self.boundaries[osm_id]
     
     def init_db(self, db_path: str = "db/boundary.duckdb"):
+        Path(db_path.rsplit('/', 1)[0]).mkdir(parents=True, exist_ok=True)
         if os.path.exists(db_path):
             return
         conn = duckdb.connect(db_path)
