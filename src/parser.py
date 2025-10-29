@@ -34,6 +34,7 @@ class OsmAdminBoundaryParser:
 
     def parse_relation(self, file_path: str, root_boundary_id: Optional[int] = None, max_admin_level: int = 7, name_preference: Optional[str] = None):
         self.max_admin_level = max_admin_level
+        self.root_boundary = root_boundary_id
 
         self.fetch_relation_from_osm(file_path, name_preference)
 
@@ -399,16 +400,3 @@ class OsmAdminBoundaryParser:
         children = [subarea for subarea in boundary.subarea_id_list if subarea in self.boundaries]
         for i, subarea in enumerate(children):
             self.__print_hierarchy(self.boundaries[subarea], has_printed, header+(blank if last else pipe), i == len(children) - 1)
-        
-
-if __name__ == "__main__":
-    parser1 = OsmAdminBoundaryParser()
-    parser1.parse("data/china-latest.osm.pbf", root_boundary_id=270056)
-    parser2 = OsmAdminBoundaryParser()
-    parser2.parse("data/taiwan-latest.osm.pbf", root_boundary_id=449220)
-    parser1.print_status()
-    parser2.print_status()
-    parser1.merge_boundaries_to_root(parser2.boundaries)
-    parser1.print_status()
-    parser1.print_hierarchy()
-    parser1.save_to_database()

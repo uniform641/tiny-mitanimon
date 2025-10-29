@@ -86,8 +86,8 @@ class OverpassHelper():
     
     def build_way_dict(self, way_ids: list[int]) -> dict[int, Way]:
         # TODO: paging & size limit
-        overpass_result = self.get_ways(way_ids)
         try:
+            overpass_result = self.get_ways(way_ids)
             ways = overpass_result["elements"]
             result: dict[int, Way] = dict()
             for way in ways:
