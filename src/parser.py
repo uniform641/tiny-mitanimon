@@ -317,6 +317,8 @@ class OsmAdminBoundaryParser:
         )
         """, insert_data)
 
+        conn.execute("create index if not exists idx_geom on relation using RTREE (geom)")
+
         conn.close()
     
     def get_super_boundary(self, osm_id: int, super_boundary_max_admin_level: int) -> int:
