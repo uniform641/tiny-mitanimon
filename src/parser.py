@@ -24,6 +24,7 @@ class OsmAdminBoundaryParser:
         self.ways: dict[int, Way] = dict()
         self.way_need: set[int] = set()
         self.overpass_helper = OverpassHelper(overpass_endpoint)
+        self.relation_fixed: list[int] = list()
     
     def parse(self, file_path: str, root_boundary_id: Optional[int] = None, max_admin_level: int = 7, name_preference: Optional[str] = None):
         print(f"parse start {datetime.now()}")
@@ -183,6 +184,7 @@ class OsmAdminBoundaryParser:
                     relation_to_be_fixed_with_parent.setdefault(subarea, list()).append(boundary.osm_id)
                     relation_to_be_fixed_with_root[subarea] = boundary.root_boundary_id
                     relation_to_be_fixed.append(subarea)
+        self.relation_fixed = list(relation_to_be_fixed)
         
         relation_tree = self.overpass_helper.build_relation_tree_from_root_relation(name_preference, max_admin_level, relation_to_be_fixed)
         self.boundaries.update(relation_tree)
