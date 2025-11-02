@@ -37,6 +37,29 @@ class OverpassHelper():
                 pass
         print(f"overpass get relations fail with retry={self.max_retry}")
         raise Exception('OverpassRequestError')
+    
+    def get_reverse_geocoding(self, lon: float, lat: float, name_preference: Optional[str] = None):
+        try:
+            result = self.api.get(f'is_in({lat},{lon});relation(pivot)[boundary=administrative];', responseformat='json', verbosity='tags')
+            if result and result['elements']:
+                ancestor_boundary_list: list[Boundary] = list()
+                for relation in result['elements']:
+                    osm_id = relation['id']
+                    tags = relation['tags']
+                    name = tags.get('name')
+                    name_en = tags.get('name:en')
+                    name_zh = tags.get('name:zh')
+                    name_prefer = tags.get(name_preference)
+                    admin_level = safe_cast(tags.get('admin_level'), int)
+                    boundary = Boundary(osm_id, name, name_en, name_zh, name_prefer, admin_level, [], [], [])
+                    ancestor_boundary_list.append(boundary)
+                return ancestor_boundary_list
+            else:
+                return []
+        except Exception as e:
+            print(e)
+        print(f"overpass get relations fail with retry={self.max_retry}")
+        return []
 
     def build_relation_tree_from_root_relation(self, name_preference: str, max_admin_level: int,
                                                root_relation_list: list[int]) -> dict[int, Boundary]:
