@@ -38,7 +38,7 @@ class OverpassHelper():
         print(f"overpass get relations fail with retry={self.max_retry}")
         raise Exception('OverpassRequestError')
     
-    def get_reverse_geocoding(self, lon: float, lat: float, name_preference: Optional[str] = None):
+    def get_reverse_geocoding(self, lon: float, lat: float, name_preference: Optional[str] = None) -> list[Boundary]:
         try:
             result = self.api.get(f'is_in({lat},{lon});relation(pivot)[boundary=administrative];', responseformat='json', verbosity='tags')
             if result and result['elements']:
