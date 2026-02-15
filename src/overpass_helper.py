@@ -1,6 +1,7 @@
 import overpass
 from shapely.geometry import LineString, Polygon
 from typing import Any, Optional
+import re
 from model import *
 from utils import *
 
@@ -126,3 +127,32 @@ class OverpassHelper():
             return result
         except:
             return dict()
+    
+    def get_osm_ids_by_names(self, names: list[str], batch_size: int = 50) -> dict[str, Optional[dict]]:
+        results = {n: None for n in names}
+
+        for batch in chunked(names, batch_size):
+            regex = "|".join([re.escape(n) for n in batch])
+            query = f"""
+            (
+            relation["boundary"="administrative"]["name:en"~"^({regex})$"];
+            relation["boundary"="administrative"]["name"~"^({regex})$"];
+            );
+            """
+            try:
+                result = self.api.get(query, responseformat='json', verbosity='ids')
+                for el in result.get("elements", []):
+                    tags = el.get("tags", {})
+                    name = tags.get("name:en") or tags.get("name")
+                    if name in results and results[name] is None:
+                        results[name] = {
+                            "osm_id": el["id"],
+                            "admin_level": tags.get("admin_level"),
+                            "name_local": tags.get("name"),
+                            "name_en": tags.get("name:en"),
+                        }
+
+            except:
+                pass
+
+        return results
